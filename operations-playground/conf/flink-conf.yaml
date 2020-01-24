@@ -20,7 +20,7 @@ jobmanager.rpc.address: jobmanager
 blob.server.port: 6124
 query.server.port: 6125
 
-taskmanager.numberOfTaskSlots: 2
+taskmanager.numberOfTaskSlots: 20
 
 state.backend: filesystem
 state.checkpoints.dir: file:///tmp/flink-checkpoints-directory

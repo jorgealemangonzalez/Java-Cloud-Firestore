@@ -17,7 +17,14 @@
 
 package org.apache.flink.playgrounds.ops.clickcount;
 
+import org.apache.flink.api.common.functions.MapFunction;
+import org.apache.flink.api.common.serialization.SimpleStringSchema;
 import org.apache.flink.api.java.utils.ParameterTool;
+import org.apache.flink.playgrounds.ops.clickcount.dbchanges.Customer;
+import org.apache.flink.playgrounds.ops.clickcount.dbchanges.CustomerSerializationSchema;
+import org.apache.flink.playgrounds.ops.clickcount.dbchanges.DbChange;
+import org.apache.flink.playgrounds.ops.clickcount.dbchanges.DbChangeDeserializationSchema;
+import org.apache.flink.playgrounds.ops.clickcount.dbchanges.DbChangeSerializationSchema;
 import org.apache.flink.playgrounds.ops.clickcount.functions.BackpressureMap;
 import org.apache.flink.playgrounds.ops.clickcount.functions.ClickEventStatisticsCollector;
 import org.apache.flink.playgrounds.ops.clickcount.functions.CountingAggregator;
@@ -32,12 +39,13 @@ import org.apache.flink.streaming.api.functions.timestamps.BoundedOutOfOrderness
 import org.apache.flink.streaming.api.windowing.time.Time;
 import org.apache.flink.streaming.connectors.kafka.FlinkKafkaConsumer;
 import org.apache.flink.streaming.connectors.kafka.FlinkKafkaProducer;
-
+import org.apache.flink.streaming.connectors.kafka.KafkaSerializationSchema;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.producer.ProducerConfig;
-
+import org.apache.kafka.clients.producer.ProducerRecord;
 import java.util.Properties;
 import java.util.concurrent.TimeUnit;
+import javax.annotation.Nullable;
 
 /**
  * A simple streaming job reading {@link ClickEvent}s from Kafka, counting events per 15 seconds and
@@ -79,38 +87,54 @@ public class ClickEventCount {
 		kafkaProps.setProperty(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, brokers);
 		kafkaProps.setProperty(ConsumerConfig.GROUP_ID_CONFIG, "click-event-count");
 
-		DataStream<ClickEvent> clicks =
-				env.addSource(new FlinkKafkaConsumer<>(inputTopic, new ClickEventDeserializationSchema(), kafkaProps))
-			.name("ClickEvent Source")
-			.assignTimestampsAndWatermarks(new BoundedOutOfOrdernessTimestampExtractor<ClickEvent>(Time.of(200, TimeUnit.MILLISECONDS)) {
-				@Override
-				public long extractTimestamp(final ClickEvent element) {
-					return element.getTimestamp().getTime();
-				}
-			});
+		final String dbChangeOutTopic = "dbchangessink.inventory.customers";
+		final String dbChangeInputTopic = "dbserver1.inventory.customers";
 
-		if (inflictBackpressure) {
-			// Force a network shuffle so that the backpressure will affect the buffer pools
-			clicks = clicks
-				.keyBy(ClickEvent::getPage)
-				.map(new BackpressureMap())
-				.name("Backpressure");
-		}
+		env.addSource(new FlinkKafkaConsumer<>(dbChangeInputTopic, new DbChangeDeserializationSchema(), kafkaProps))
+		   .name("DB changes")
+		   .map((MapFunction<DbChange, Customer>)dbChange -> {
+			   System.out.println("Changed value of row to: " + dbChange.getAfter().toString());
+			   return dbChange.getAfter();
+		   })
+		   .name("Get after customer from dbchange")
+		   .addSink(new FlinkKafkaProducer<>(
+			   dbChangeOutTopic,new CustomerSerializationSchema(dbChangeOutTopic),
+			   kafkaProps,
+			   FlinkKafkaProducer.Semantic.AT_LEAST_ONCE))
+		   .name("DB Changes Sink");
 
-		DataStream<ClickEventStatistics> statistics = clicks
-			.keyBy(ClickEvent::getPage)
-			.timeWindow(WINDOW_SIZE)
-			.aggregate(new CountingAggregator(),
-				new ClickEventStatisticsCollector())
-			.name("ClickEvent Counter");
-
-		statistics
-			.addSink(new FlinkKafkaProducer<>(
-				outputTopic,
-				new ClickEventStatisticsSerializationSchema(outputTopic),
-				kafkaProps,
-				FlinkKafkaProducer.Semantic.AT_LEAST_ONCE))
-			.name("ClickEventStatistics Sink");
+		//DataStream<ClickEvent> clicks =
+		//		env.addSource(new FlinkKafkaConsumer<>(inputTopic, new ClickEventDeserializationSchema(), kafkaProps))
+		//	.name("ClickEvent Source")
+		//	.assignTimestampsAndWatermarks(new BoundedOutOfOrdernessTimestampExtractor<ClickEvent>(Time.of(200, TimeUnit.MILLISECONDS)) {
+		//		@Override
+		//		public long extractTimestamp(final ClickEvent element) {
+		//			return element.getTimestamp().getTime();
+		//		}
+		//	});
+		//
+		//if (inflictBackpressure) {
+		//	// Force a network shuffle so that the backpressure will affect the buffer pools
+		//	clicks = clicks
+		//		.keyBy(ClickEvent::getPage)
+		//		.map(new BackpressureMap())
+		//		.name("Backpressure");
+		//}
+		//
+		//DataStream<ClickEventStatistics> statistics = clicks
+		//	.keyBy(ClickEvent::getPage)
+		//	.timeWindow(WINDOW_SIZE)
+		//	.aggregate(new CountingAggregator(),
+		//		new ClickEventStatisticsCollector())
+		//	.name("ClickEvent Counter");
+		//
+		//statistics
+		//	.addSink(new FlinkKafkaProducer<>(
+		//		outputTopic,
+		//		new ClickEventStatisticsSerializationSchema(outputTopic),
+		//		kafkaProps,
+		//		FlinkKafkaProducer.Semantic.AT_LEAST_ONCE))
+		//	.name("ClickEventStatistics Sink");
 
 		env.execute("Click Event Count");
 	}

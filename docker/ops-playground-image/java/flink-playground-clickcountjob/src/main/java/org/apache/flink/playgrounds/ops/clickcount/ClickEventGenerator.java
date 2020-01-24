@@ -18,10 +18,12 @@
 
 package org.apache.flink.playgrounds.ops.clickcount;
 
+import org.apache.commons.lang3.StringUtils;
 import org.apache.flink.api.java.utils.ParameterTool;
 import org.apache.flink.playgrounds.ops.clickcount.records.ClickEvent;
 import org.apache.flink.playgrounds.ops.clickcount.records.ClickEventSerializationSchema;
 
+import org.apache.flink.shaded.guava18.com.google.common.base.Strings;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
@@ -33,6 +35,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.function.Predicate;
+import java.util.stream.Stream;
 
 import static org.apache.flink.playgrounds.ops.clickcount.ClickEventCount.WINDOW_SIZE;
 
@@ -49,7 +53,7 @@ public class ClickEventGenerator {
 
 	public static final int EVENTS_PER_WINDOW = 1000;
 
-	private static final List<String> pages = Arrays.asList("/help", "/index", "/shop", "/jobs", "/about", "/news");
+	private static final List<String> pages = Arrays.asList("/help2", "/index2", "/shop2", "/jobs2", "/about2", "/news2");
 
 	//this calculation is only accurate as long as pages.size() * EVENTS_PER_WINDOW divides the
 	//window size
