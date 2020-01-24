@@ -9,3 +9,17 @@ Apache flink
 
 Debezium
 *  https://github.com/debezium/debezium-examples/tree/master/tutorial
+
+##How to run 
+Run docker
+
+`docker-compose up -d`
+
+Start DB watching
+
+`curl -i -X POST -H "Accept:application/json" -H  "Content-Type:application/json" http://localhost:8083/connectors/ -d @register-mysql.json`
+
+Open Apache Flink pannel
+
+`http://localhost:8081/#/overview`
+ 
